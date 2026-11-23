@@ -9,9 +9,11 @@ export class Room {
     this.env = env;
     this.doc = { elements: [], files: {}, revision: 0 };
     this.stickers = [];
+    this.comments = [];
     this.ready = ctx.blockConcurrencyWhile(async () => {
       this.doc = await ctx.storage.get('board') || this.doc;
       this.stickers = await ctx.storage.get('stickers') || [];
+      this.comments = await ctx.storage.get('comments') || [];
     });
   }
   members() {
@@ -34,7 +36,7 @@ export class Room {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ id, name, pointer: null });
-    server.send(JSON.stringify({ type: 'snapshot', elements: this.doc.elements, files: this.doc.files, revision: this.doc.revision, members: this.members(), stickers: this.stickers }));
+    server.send(JSON.stringify({ type: 'snapshot', elements: this.doc.elements, files: this.doc.files, revision: this.doc.revision, members: this.members(), stickers: this.stickers, comments: this.comments }));
     this.emit({ type: 'members', members: this.members() });
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -47,6 +49,34 @@ export class Room {
       const a = ws.deserializeAttachment() || {};
       ws.serializeAttachment({ ...a, pointer: { x: data.pointer.x, y: data.pointer.y } });
       this.emit({ type: 'pointer', id: author, pointer: data.pointer }, ws);
+      return;
+    }
+    if (data.type === 'comment_event') {
+      const attachment = ws.deserializeAttachment() || {};
+      const authorName = (attachment.name || 'Guest').slice(0, 32).replace(/[<>]/g, '');
+      const text = value => typeof value === 'string' ? value.trim().slice(0, 500) : '';
+      if (data.op === 'add') {
+        const c = data.comment;
+        if (!c || typeof c.id !== 'string' || c.id.length > 64 || this.comments.some(old => old.id === c.id)) return;
+        if (!['comment', 'note'].includes(c.kind) || ![c.x,c.y].every(Number.isFinite) || Math.abs(c.x) > 100000 || Math.abs(c.y) > 100000) return;
+        const body = text(c.body);
+        if (!body || this.comments.length >= 250) return;
+        this.comments = [...this.comments, { id: c.id, x: c.x, y: c.y, kind: c.kind, body,
+          author: authorName, at: Date.now(), resolved: false, replies: [] }];
+      } else if (data.op === 'reply') {
+        const c = this.comments.find(x => x.id === data.id);
+        const r = data.reply;
+        if (!c || !r || typeof r.id !== 'string' || r.id.length > 64 || c.replies.length >= 100) return;
+        const body = text(r.body);
+        if (!body || c.replies.some(x => x.id === r.id)) return;
+        c.replies.push({ id: r.id, body, author: authorName, at: Date.now() });
+      } else if (data.op === 'resolve') {
+        const c = this.comments.find(x => x.id === data.id);
+        if (!c || typeof data.resolved !== 'boolean') return;
+        c.resolved = data.resolved;
+      } else return;
+      await this.ctx.storage.put('comments', this.comments);
+      this.emit({ type: 'comments', comments: this.comments });
       return;
     }
     if (data.type === 'reaction') {
