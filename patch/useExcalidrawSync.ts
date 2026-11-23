@@ -1,6 +1,6 @@
 import type { OrderedExcalidrawElement } from '@excalidraw/excalidraw/element/types';
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store';
 import { useExcalidrawFilesStore } from '../store/excalidrawFiles';
 import { useLiveRoom } from './useLiveRoom';
@@ -33,6 +33,8 @@ export const useExcalidrawSync = () => {
     return () => { cancelled = true; switching.current = false; };
   }, [api, currentTabId, theme, getFiles, live.room, live.roomTab, live.hydrated]);
 
+  // Excalidraw calls onChange during tool/zoom transitions. Keep these handler
+  // references stable across Zustand updates to avoid re-subscribing on every change.
   const onChange = useCallback((elements: readonly OrderedExcalidrawElement[], state: AppState, files: BinaryFiles) => {
     if (switching.current || live.isApplyingRemote()) return;
     const active = useAppStore.getState().currentTabId;
@@ -43,17 +45,26 @@ export const useExcalidrawSync = () => {
     void setFiles(files);
     live.sceneChanged(elements, files);
     live.sendView(state);
-  }, [updateTab, setFiles, live]);
+  }, [updateTab, setFiles, live.isApplyingRemote, live.sceneChanged, live.sendView]);
 
-  return { live, excalidrawProps: {
+  const onPointerUpdate = useCallback(
+    ({ pointer }: { pointer: { x: number; y: number } }) => live.sendPointer(pointer),
+    [live.sendPointer],
+  );
+
+  const initialData = useCallback(async () => {
+    const store = useAppStore.getState();
+    const tab = store.tabs.find(t => t.id === store.currentTabId) || store.tabs[0];
+    return { elements: tab?.elements || [], appState: { ...tab?.appState, theme }, files: await getFiles() };
+  }, [theme, getFiles]);
+
+  const excalidrawProps = useMemo(() => ({
     excalidrawAPI: setApi,
     theme,
     onChange,
-    onPointerUpdate: ({ pointer }: { pointer: { x: number; y: number } }) => live.sendPointer(pointer),
-    initialData: async () => {
-      const store = useAppStore.getState();
-      const tab = store.tabs.find(t => t.id === store.currentTabId) || store.tabs[0];
-      return { elements: tab?.elements || [], appState: { ...tab?.appState, theme }, files: await getFiles() };
-    }
-  } };
+    onPointerUpdate,
+    initialData,
+  }), [theme, onChange, onPointerUpdate, initialData]);
+
+  return { live, excalidrawProps };
 };

@@ -311,7 +311,8 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const leave = useCallback(() => { location.hash = 'local'; }, []);
   const setDisplayName = useCallback((value: string) => { const clean = value.trim().slice(0, 32) || 'Guest'; localStorage.setItem('draw-name', clean); setName(clean); }, []);
   const shareUrl = room ? location.origin + '/#room=' + room : '';
+  const isApplyingRemote = useCallback(() => applying.current, []);
   return { room, roomTab, hydrated, status, members, clientId: CLIENT, following, follow, stopFollowing,
     viewport, api, stickers, reactions, comments, createComment, replyComment, resolveComment, sendReaction, sendSticker, deleteSticker, sendView, name, error, start, leave, setDisplayName,
-    shareUrl, sendPointer, sceneChanged, isApplyingRemote: () => applying.current };
+    shareUrl, sendPointer, sceneChanged, isApplyingRemote };
 }
