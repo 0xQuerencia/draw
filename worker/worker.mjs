@@ -13,7 +13,7 @@ export class Room {
   members() {
     return this.ctx.getWebSockets().map(s => {
       const a = s.deserializeAttachment() || {};
-      return { id: a.id, name: a.name || 'Guest', pointer: a.pointer || null };
+      return { id: a.id, name: a.name || 'Guest', pointer: a.pointer || null, viewport: a.viewport || null };
     }).filter(x => x.id);
   }
   emit(data, exclude) {
@@ -43,6 +43,14 @@ export class Room {
       const a = ws.deserializeAttachment() || {};
       ws.serializeAttachment({ ...a, pointer: { x: data.pointer.x, y: data.pointer.y } });
       this.emit({ type: 'pointer', id: author, pointer: data.pointer }, ws);
+      return;
+    }
+    if (data.type === 'view') {
+      const v = data.viewport;
+      if (!v || !Number.isFinite(v.scrollX) || !Number.isFinite(v.scrollY) || !Number.isFinite(v.zoom) || v.zoom < 0.05 || v.zoom > 30) return;
+      const viewport = { scrollX: v.scrollX, scrollY: v.scrollY, zoom: v.zoom };
+      ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), viewport });
+      this.emit({ type: 'view', id: author, viewport }, ws);
       return;
     }
     if (data.type !== 'patch' || !Array.isArray(data.elements) || data.elements.length > 2000 || !data.files || typeof data.files !== 'object' || Array.isArray(data.files)) return;

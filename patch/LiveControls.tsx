@@ -21,7 +21,21 @@ export default function LiveControls({ live }: { live: Live }) {
         {copied ? 'Link copied!' : 'Copy invite link'}
       </button>
       {live.error && <p style={{ fontSize: 12, color: '#b44' }}>{live.error}</p>}
-      <div style={{ fontSize: 12, marginTop: 12 }}>{live.members.map(m => <div key={m.id}>● {m.name}</div>)}</div>
+      <div style={{ fontSize: 12, marginTop: 12 }}>
+        <strong style={{ display: 'block', marginBottom: 7 }}>People here</strong>
+        {live.members.map(m => <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <span>● {m.name}{m.id === live.clientId ? ' (you)' : ''}</span>
+          {m.id !== live.clientId && <button type="button" style={{ ...button, padding: '4px 8px', fontSize: 11 }}
+            onClick={() => live.following === m.id ? live.stopFollowing() : live.follow(m.id)}>
+            {live.following === m.id ? 'Unfollow' : 'Follow'}
+          </button>}
+        </div>)}
+      </div>
+      {live.following && <div role="status" style={{ borderTop: '1px solid #eee', paddingTop: 10, fontSize: 12 }}>
+        Following {live.members.find(m => m.id === live.following)?.name || 'collaborator'}
+        <button type="button" style={{ ...button, marginLeft: 10 }} onClick={live.stopFollowing}>Stop</button>
+        <div style={{ opacity: .7, marginTop: 5 }}>Move your canvas or press Esc to stop</div>
+      </div>}
       <button type="button" style={{ ...button, marginTop: 12 }} onClick={() => { live.leave(); setOpen(false); }}>Leave room</button>
     </div>}
   </div>;

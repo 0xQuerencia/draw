@@ -42,6 +42,7 @@ export const useExcalidrawSync = () => {
     });
     void setFiles(files);
     live.sceneChanged(elements, files);
+    live.sendView(state);
   }, [updateTab, setFiles, live]);
 
   return { live, excalidrawProps: {
