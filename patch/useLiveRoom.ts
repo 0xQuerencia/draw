@@ -1,10 +1,11 @@
 import type { OrderedExcalidrawElement as El } from '@excalidraw/excalidraw/element/types';
-import type { BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
+import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store';
 import { useExcalidrawFilesStore } from '../store/excalidrawFiles';
 
-export type Member = { id: string; name: string; pointer?: { x: number; y: number } | null };
+export type Viewport = { scrollX: number; scrollY: number; zoom: number };
+export type Member = { id: string; name: string; pointer?: { x: number; y: number } | null; viewport?: Viewport | null };
 export type RoomStatus = 'private' | 'connecting' | 'connected' | 'offline';
 const CLIENT = crypto.randomUUID();
 const parseRoom = () => {
@@ -24,6 +25,9 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const [hydrated, setHydrated] = useState(false);
   const [status, setStatus] = useState<RoomStatus>(room ? 'connecting' : 'private');
   const [members, setMembers] = useState<Member[]>([]);
+  const [following, setFollowing] = useState<string | null>(null);
+  const followingRef = useRef<string | null>(null);
+  const lastView = useRef(0);
   const [error, setError] = useState('');
   const [name, setName] = useState(() => localStorage.getItem('draw-name') || 'Guest');
   const ws = useRef<WebSocket | null>(null);
@@ -44,7 +48,8 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   }, []);
 
   useEffect(() => {
-    if (!room) { setRoomTab(null); setHydrated(false); setStatus('private'); return; }
+    if (!room) { setRoomTab(null); setHydrated(false); setStatus('private'); followingRef.current = null; setFollowing(null); return; }
+    followingRef.current = null; setFollowing(null);
     const key = 'draw-room-tab:' + room;
     const saved = localStorage.getItem(key);
     const existing = saved === null ? NaN : Number(saved);
@@ -135,6 +140,17 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
           setMembers(Array.isArray(message.members) ? message.members : []);
         } else if (message.type === 'pointer') {
           setMembers(prev => prev.map(m => m.id === message.id ? { ...m, pointer: message.pointer } : m));
+        } else if (message.type === 'view') {
+          const v = message.viewport as Viewport | undefined;
+          if (!v || !Number.isFinite(v.scrollX) || !Number.isFinite(v.scrollY) || !Number.isFinite(v.zoom)) return;
+          setMembers(prev => prev.map(m => m.id === message.id ? { ...m, viewport: v } : m));
+          if (followingRef.current === message.id && latest.current.api) {
+            applying.current = true;
+            latest.current.api.updateScene({ appState: {
+              scrollX: v.scrollX, scrollY: v.scrollY, zoom: { value: v.zoom } as AppState['zoom']
+            } });
+            setTimeout(() => { applying.current = false; }, 120);
+          }
         }
       };
       socket.onclose = () => {
@@ -166,10 +182,44 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const sendPointer = useCallback((pointer: { x: number; y: number }) => {
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ type: 'pointer', pointer }));
   }, []);
+  const sendView = useCallback((state: AppState) => {
+    if (!room || !hydrated || roomTab !== tabId || followingRef.current) return;
+    const now = Date.now();
+    if (now - lastView.current < 125) return;
+    lastView.current = now;
+    if (ws.current?.readyState !== WebSocket.OPEN) return;
+    ws.current.send(JSON.stringify({ type: 'view', viewport: {
+      scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value
+    } }));
+  }, [room, hydrated, tabId, roomTab]);
+  const follow = useCallback((id: string) => {
+    if (!id || id === CLIENT) return;
+    followingRef.current = id;
+    setFollowing(id);
+  }, []);
+  const stopFollowing = useCallback(() => {
+    followingRef.current = null;
+    setFollowing(null);
+  }, []);
+  useEffect(() => {
+    if (!following) return;
+    const stopOnInput = (event: Event) => {
+      if ((event.target as HTMLElement | null)?.closest?.('.excalidraw')) stopFollowing();
+    };
+    const stopOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') stopFollowing(); };
+    window.addEventListener('wheel', stopOnInput, { passive: true });
+    window.addEventListener('pointerdown', stopOnInput);
+    window.addEventListener('keydown', stopOnEscape);
+    return () => {
+      window.removeEventListener('wheel', stopOnInput);
+      window.removeEventListener('pointerdown', stopOnInput);
+      window.removeEventListener('keydown', stopOnEscape);
+    };
+  }, [following, stopFollowing]);
   const start = useCallback(() => { location.hash = 'room=' + crypto.randomUUID().replace(/-/g, ''); }, []);
   const leave = useCallback(() => { location.hash = 'local'; }, []);
   const setDisplayName = useCallback((value: string) => { const clean = value.trim().slice(0, 32) || 'Guest'; localStorage.setItem('draw-name', clean); setName(clean); }, []);
   const shareUrl = room ? location.origin + '/#room=' + room : '';
-  return { room, roomTab, hydrated, status, members, name, error, start, leave, setDisplayName,
+  return { room, roomTab, hydrated, status, members, clientId: CLIENT, following, follow, stopFollowing, sendView, name, error, start, leave, setDisplayName,
     shareUrl, sendPointer, sceneChanged, isApplyingRemote: () => applying.current };
 }
