@@ -10,10 +10,12 @@ export class Room {
     this.doc = { elements: [], files: {}, revision: 0 };
     this.stickers = [];
     this.comments = [];
+    this.meta = { title: 'Untitled board', updatedAt: 0 };
     this.ready = ctx.blockConcurrencyWhile(async () => {
       this.doc = await ctx.storage.get('board') || this.doc;
       this.stickers = await ctx.storage.get('stickers') || [];
       this.comments = await ctx.storage.get('comments') || [];
+      this.meta = await ctx.storage.get('meta') || this.meta;
     });
   }
   members() {
@@ -36,7 +38,7 @@ export class Room {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ id, name, pointer: null });
-    server.send(JSON.stringify({ type: 'snapshot', elements: this.doc.elements, files: this.doc.files, revision: this.doc.revision, members: this.members(), stickers: this.stickers, comments: this.comments }));
+    server.send(JSON.stringify({ type: 'snapshot', elements: this.doc.elements, files: this.doc.files, revision: this.doc.revision, members: this.members(), stickers: this.stickers, comments: this.comments, meta: this.meta }));
     this.emit({ type: 'members', members: this.members() });
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -49,6 +51,15 @@ export class Room {
       const a = ws.deserializeAttachment() || {};
       ws.serializeAttachment({ ...a, pointer: { x: data.pointer.x, y: data.pointer.y } });
       this.emit({ type: 'pointer', id: author, pointer: data.pointer }, ws);
+      return;
+    }
+    if (data.type === 'room_meta') {
+      if (typeof data.title !== 'string') return;
+      const title = data.title.trim().slice(0, 80);
+      if (!title) return;
+      this.meta = { title, updatedAt: Date.now() };
+      await this.ctx.storage.put('meta', this.meta);
+      this.emit({ type: 'room_meta', meta: this.meta });
       return;
     }
     if (data.type === 'comment_event') {
@@ -76,6 +87,7 @@ export class Room {
         c.resolved = data.resolved;
       } else return;
       await this.ctx.storage.put('comments', this.comments);
+      this.meta.updatedAt = Date.now(); await this.ctx.storage.put('meta', this.meta);
       this.emit({ type: 'comments', comments: this.comments });
       return;
     }
@@ -102,6 +114,7 @@ export class Room {
         this.stickers = [...this.stickers.filter(item => item.id !== s.id), { id: s.id, emoji: s.emoji, x: s.x, y: s.y, size: s.size }];
       }
       await this.ctx.storage.put('stickers', this.stickers);
+      this.meta.updatedAt = Date.now(); await this.ctx.storage.put('meta', this.meta);
       this.emit({ type: 'sticker', op: data.op, sticker: s }, ws);
       return;
     }
@@ -133,6 +146,7 @@ export class Room {
     Object.assign(this.doc.files, fresh);
     this.doc.revision += 1;
     await this.ctx.storage.put('board', this.doc);
+    this.meta.updatedAt = Date.now(); await this.ctx.storage.put('meta', this.meta);
     this.emit({ type: 'patch', elements: accepted, files: fresh, revision: this.doc.revision, author });
   }
   webSocketClose(ws, code, reason) {

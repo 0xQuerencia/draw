@@ -4,12 +4,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store';
 import { useExcalidrawFilesStore } from '../store/excalidrawFiles';
 import { useLiveRoom } from './useLiveRoom';
+import { captureRoom } from '../utils/recentRooms';
 
 export const useExcalidrawSync = () => {
   const { currentTabId, updateTab, theme } = useAppStore();
   const { setFiles, getFiles } = useExcalidrawFilesStore();
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const switching = useRef(false);
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const live = useLiveRoom(api, currentTabId);
 
   useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
@@ -43,6 +45,11 @@ export const useExcalidrawSync = () => {
     void setFiles(files);
     live.sceneChanged(elements, files);
     live.sendView(state);
+    if (live.room && active === live.roomTab) {
+      if (previewTimer.current) clearTimeout(previewTimer.current);
+      const id = live.room;
+      previewTimer.current = setTimeout(() => captureRoom(id), 1800);
+    }
   }, [updateTab, setFiles, live]);
 
   return { live, excalidrawProps: {
