@@ -8,7 +8,11 @@ export class Room {
     this.ctx = ctx;
     this.env = env;
     this.doc = { elements: [], files: {}, revision: 0 };
-    this.ready = ctx.blockConcurrencyWhile(async () => { this.doc = await ctx.storage.get('board') || this.doc; });
+    this.stickers = [];
+    this.ready = ctx.blockConcurrencyWhile(async () => {
+      this.doc = await ctx.storage.get('board') || this.doc;
+      this.stickers = await ctx.storage.get('stickers') || [];
+    });
   }
   members() {
     return this.ctx.getWebSockets().map(s => {
@@ -30,7 +34,7 @@ export class Room {
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ id, name, pointer: null });
-    server.send(JSON.stringify({ type: 'snapshot', elements: this.doc.elements, files: this.doc.files, revision: this.doc.revision, members: this.members() }));
+    server.send(JSON.stringify({ type: 'snapshot', elements: this.doc.elements, files: this.doc.files, revision: this.doc.revision, members: this.members(), stickers: this.stickers }));
     this.emit({ type: 'members', members: this.members() });
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -43,6 +47,32 @@ export class Room {
       const a = ws.deserializeAttachment() || {};
       ws.serializeAttachment({ ...a, pointer: { x: data.pointer.x, y: data.pointer.y } });
       this.emit({ type: 'pointer', id: author, pointer: data.pointer }, ws);
+      return;
+    }
+    if (data.type === 'reaction') {
+      const r = data.reaction;
+      if (!r || !['❤️', '✨', '🎉', '👍', '😂', '🥹', '🔥', '💜'].includes(r.emoji)) return;
+      if (typeof r.id !== 'string' || r.id.length > 64) return;
+      const reaction = { id: r.id, emoji: r.emoji,
+        x: Number.isFinite(r.x) ? Math.min(1, Math.max(0, r.x)) : .5,
+        y: Number.isFinite(r.y) ? Math.min(1, Math.max(0, r.y)) : .6 };
+      this.emit({ type: 'reaction', reaction }, ws);
+      return;
+    }
+    if (data.type === 'sticker') {
+      const s = data.sticker;
+      if (!s || typeof s.id !== 'string' || s.id.length > 64) return;
+      if (data.op !== 'delete' && data.op !== 'upsert') return;
+      if (data.op === 'delete') {
+        this.stickers = this.stickers.filter(item => item.id !== s.id);
+      } else {
+        if (!['❤️', '✨', '🎉', '👍', '😂', '🥹', '🔥', '💜'].includes(s.emoji)) return;
+        if (![s.x,s.y,s.size].every(Number.isFinite) || Math.abs(s.x) > 100000 || Math.abs(s.y) > 100000 || s.size < 16 || s.size > 160) return;
+        if (this.stickers.length >= 400 && !this.stickers.some(item => item.id === s.id)) return;
+        this.stickers = [...this.stickers.filter(item => item.id !== s.id), { id: s.id, emoji: s.emoji, x: s.x, y: s.y, size: s.size }];
+      }
+      await this.ctx.storage.put('stickers', this.stickers);
+      this.emit({ type: 'sticker', op: data.op, sticker: s }, ws);
       return;
     }
     if (data.type === 'view') {

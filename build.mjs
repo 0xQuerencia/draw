@@ -14,6 +14,7 @@ const overrides = {
   'patch/useExcalidrawSync.ts': 'src/hooks/useExcalidrawSync.ts',
   'patch/useLiveRoom.ts': 'src/hooks/useLiveRoom.ts',
   'patch/LiveControls.tsx': 'src/components/LiveControls.tsx',
+  'patch/CanvasExtras.tsx': 'src/components/CanvasExtras.tsx',
 };
 for (const [source, target] of Object.entries(overrides)) {
   const destination = path.join('upstream', target);
