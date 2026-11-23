@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "check": "node --check build.mjs && node --check worker/worker.mjs"
+    "check": "node --check build.mjs && node --check worker/worker.mjs && node --test worker/room.test.mjs",
+    "test": "node --test worker/room.test.mjs"
   }
 }

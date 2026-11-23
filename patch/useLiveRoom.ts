@@ -77,12 +77,12 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
 
   const apply = useCallback((incoming: El[], files: BinaryFiles) => {
     const current = latest.current;
-    if (!current.api || current.roomTab === null) return [];
+    if (current.roomTab === null) return [];
     const stored = useAppStore.getState().tabs.find(t => t.id === current.roomTab)?.elements || [];
-    const combined = merge(stored, incoming);
+    const combined = merge((stored as readonly El[]).filter(e => e.index !== null), incoming);
     applying.current = true;
     useAppStore.getState().updateTab(current.roomTab, { elements: combined });
-    if (current.tabId === current.roomTab) current.api.updateScene({ elements: combined });
+    if (current.tabId === current.roomTab) current.api?.updateScene({ elements: combined });
     if (Object.keys(files).length) void getFiles().then(all => {
       const joined = { ...all, ...files };
       void setFiles(joined);

@@ -11,7 +11,7 @@ export default function CanvasExtras({ live }: { live: Live }) {
   const [placing, setPlacing] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [moving, setMoving] = useState<Sticker | null>(null);
-  const [size, setSize] = useState(46);
+  const size = 46;
 
   useEffect(() => {
     const stop = (e: KeyboardEvent) => { if (e.key === 'Escape') { setPicker(null); setPlacing(null); setSelected(null); } };
