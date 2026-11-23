@@ -76,8 +76,7 @@ export default function RoomDashboard() {
             {room.preview
               ? <img alt="" src={room.preview} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               : <span aria-hidden="true" style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%',
-                color: '#b4a7bd', fontSize: 42, backgroundImage: 'radial-gradient(#d8d0dd 1px,transparent 1px)',
-                backgroundSize: '20px 20px' }}>✳</span>}
+                color: '#b4a7bd', fontSize: 42, background: '#efedf2' }}>✳</span>}
           </button>
           <div style={{ padding: '15px 16px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>

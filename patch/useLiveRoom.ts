@@ -40,6 +40,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const [viewport, setViewport] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
   const followingRef = useRef<string | null>(null);
   const lastView = useRef(0);
+  const lastPointer = useRef(0);
   const [error, setError] = useState('');
   const [name, setName] = useState(() => localStorage.getItem('draw-name') || 'Guest');
   const ws = useRef<WebSocket | null>(null);
@@ -61,7 +62,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
 
   useEffect(() => {
     if (!room) { setRoomTab(null); setHydrated(false); setStatus('private'); setStickers([]); setReactions([]); setComments([]); followingRef.current = null; setFollowing(null); return; }
-    followingRef.current = null; setFollowing(null);
+    followingRef.current = null; setFollowing(null); setMembers([]); setRoomNameState('Untitled board');
     rememberRoom(room);
     const key = 'draw-room-tab:' + room;
     const saved = localStorage.getItem(key);
@@ -77,12 +78,12 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
 
   const apply = useCallback((incoming: El[], files: BinaryFiles) => {
     const current = latest.current;
-    if (!current.api || current.roomTab === null) return [];
+    if (current.roomTab === null) return [];
     const stored = useAppStore.getState().tabs.find(t => t.id === current.roomTab)?.elements || [];
-    const combined = merge(stored, incoming);
+    const combined = merge((stored as readonly El[]).filter(e => e.index !== null), incoming);
     applying.current = true;
     useAppStore.getState().updateTab(current.roomTab, { elements: combined });
-    if (current.tabId === current.roomTab) current.api.updateScene({ elements: combined });
+    if (current.tabId === current.roomTab) current.api?.updateScene({ elements: combined });
     if (Object.keys(files).length) void getFiles().then(all => {
       const joined = { ...all, ...files };
       void setFiles(joined);
@@ -218,6 +219,9 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   }, [room, tabId, roomTab, hydrated, flush]);
 
   const sendPointer = useCallback((pointer: { x: number; y: number }) => {
+    const now = Date.now();
+    if (now - lastPointer.current < 45) return;
+    lastPointer.current = now;
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ type: 'pointer', pointer }));
   }, []);
   const sendView = useCallback((state: AppState) => {
@@ -294,7 +298,17 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
     if (!id || id === CLIENT) return;
     followingRef.current = id;
     setFollowing(id);
-  }, []);
+    const target = members.find(m => m.id === id)?.viewport;
+    if (target && latest.current.api) {
+      applying.current = true;
+      latest.current.api.updateScene({ appState: {
+        scrollX: target.scrollX, scrollY: target.scrollY,
+        zoom: { value: target.zoom } as AppState['zoom']
+      } });
+      setViewport(target);
+      setTimeout(() => { applying.current = false; }, 120);
+    }
+  }, [members]);
   const stopFollowing = useCallback(() => {
     followingRef.current = null;
     setFollowing(null);

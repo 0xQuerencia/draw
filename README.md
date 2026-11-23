@@ -1,27 +1,30 @@
 # Draw
 
-The collaborative drawing app at [draw.querencia.art](https://draw.querencia.art).
+Collaborative drawing at [draw.querencia.art](https://draw.querencia.art).
 
-This repository stores the app's custom frontend patches and the source for its Cloudflare Durable Object collaboration service. We currently use a pinned revision of [MontejoJorge/excalidraw-multi-tabs](https://github.com/MontejoJorge/excalidraw-multi-tabs) (MIT).
+This repo contains the Vercel frontend build and the source for the live Cloudflare Worker, including the MCP integration used by the Draw plugin. It uses a pinned upstream [Excalidraw multi-tab](https://github.com/MontejoJorge/excalidraw-multi-tabs) revision (MIT).
 
-## Build
+## Run
 
 ```sh
-node build.mjs
+npm run check
+npm run build
 ```
 
-The build clones the pinned upstream revision, applies the patches in `patch/`, and emits Vercel-compatible static files into `public/`. You need Git, Node.js and npm. For local development, use a static server against `public/` or run Vite in the generated `upstream/` directory.
+Node 22+, npm and Git required. The build creates a `public/` directory. Preview locally with a static file server. Use `#local` for the personal canvas or `#room=<32 hex chars>` for shared boards.
 
-The drawing editor keeps existing Excalidraw tab storage. Shared rooms use `#room=<32-character-id>` and the existing `wss://sync.querencia.art/room/<id>` protocol.
+## Architecture
 
-## Deployment safety
+- Frontend: Vercel + React / Excalidraw. `build.mjs` clones the pinned upstream revision and applies the files in `patch/`.
+- Room sync: `sync.querencia.art` (Cloudflare Worker + Durable Object). The `board` storage key and `ROOMS` binding remain unchanged.
+- Ephemeral messages: live pointers, viewports, and reactions.
+- Persistent keys: `board`, `stickers`, `comments`, `meta`.
+- Dashboard: recent room history, favorites and image previews are stored **locally in the browser**. Room title metadata lives on the server.
 
-The production Vercel domain still points at the previously deployed version. Do not repoint it until the migration and two-browser collaboration tests pass. Do not replace the live Worker configuration without first verifying its existing Durable Object migration history and routes.
+## Production deployment
+
+PRs are intentionally not merged or deployed yet. **Before updating the live Worker**, confirm its existing bindings, routes, migrations and MCP compatibility; do not create a new Durable Object namespace. Keep the existing production deployment as a rollback target. Run two-browser drawing, follow, offline/reconnect and reload tests before promoting the frontend.
 
 ## License
 
-The upstream Excalidraw multi-tab wrapper uses MIT; Excalidraw and its dependencies retain their original licenses.
-
-## Room dashboard
-
-The website root shows recently visited rooms on **this browser**, including local thumbnail previews and pinned favorites. Shared board links open directly. Use `#local` for a personal Excalidraw canvas. Room titles and collaboration state are synchronized by the Worker; saved local previews are not uploaded.
+Respect the MIT license for the upstream wrapper and licenses for Excalidraw and other dependencies.
