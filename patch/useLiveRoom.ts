@@ -5,6 +5,9 @@ import { useAppStore } from '../store';
 import { useExcalidrawFilesStore } from '../store/excalidrawFiles';
 
 export type Viewport = { scrollX: number; scrollY: number; zoom: number };
+export type Sticker = { id: string; emoji: string; x: number; y: number; size: number };
+export type Reaction = { id: string; emoji: string; x: number; y: number; at: number };
+export const EMOJI = ['❤️', '✨', '🎉', '👍', '😂', '🥹', '🔥', '💜'] as const;
 export type Member = { id: string; name: string; pointer?: { x: number; y: number } | null; viewport?: Viewport | null };
 export type RoomStatus = 'private' | 'connecting' | 'connected' | 'offline';
 const CLIENT = crypto.randomUUID();
@@ -26,6 +29,9 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const [status, setStatus] = useState<RoomStatus>(room ? 'connecting' : 'private');
   const [members, setMembers] = useState<Member[]>([]);
   const [following, setFollowing] = useState<string | null>(null);
+  const [stickers, setStickers] = useState<Sticker[]>([]);
+  const [reactions, setReactions] = useState<Reaction[]>([]);
+  const [viewport, setViewport] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
   const followingRef = useRef<string | null>(null);
   const lastView = useRef(0);
   const [error, setError] = useState('');
@@ -48,7 +54,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   }, []);
 
   useEffect(() => {
-    if (!room) { setRoomTab(null); setHydrated(false); setStatus('private'); followingRef.current = null; setFollowing(null); return; }
+    if (!room) { setRoomTab(null); setHydrated(false); setStatus('private'); setStickers([]); setReactions([]); followingRef.current = null; setFollowing(null); return; }
     followingRef.current = null; setFollowing(null);
     const key = 'draw-room-tab:' + room;
     const saved = localStorage.getItem(key);
@@ -116,6 +122,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
           const files = message.files && typeof message.files === 'object' ? message.files as BinaryFiles : {};
           const joined = apply(elements, files);
           setMembers(Array.isArray(message.members) ? message.members : []);
+          setStickers(Array.isArray(message.stickers) ? message.stickers : []);
           setStatus('connected');
           setHydrated(true);
           // Restore offline edits that are newer than the server snapshot.
@@ -149,8 +156,19 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
             latest.current.api.updateScene({ appState: {
               scrollX: v.scrollX, scrollY: v.scrollY, zoom: { value: v.zoom } as AppState['zoom']
             } });
+            setViewport(v);
             setTimeout(() => { applying.current = false; }, 120);
           }
+        } else if (message.type === 'reaction') {
+          const r = message.reaction as Reaction | undefined;
+          if (!r || !EMOJI.includes(r.emoji as typeof EMOJI[number])) return;
+          setReactions(prev => [...prev.slice(-18), { ...r, at: Date.now() }]);
+        } else if (message.type === 'sticker') {
+          const item = message.sticker as Sticker | undefined;
+          if (!item || typeof item.id !== 'string') return;
+          setStickers(prev => message.op === 'delete'
+            ? prev.filter(s => s.id !== item.id)
+            : [...prev.filter(s => s.id !== item.id), item]);
         }
       };
       socket.onclose = () => {
@@ -183,6 +201,10 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ type: 'pointer', pointer }));
   }, []);
   const sendView = useCallback((state: AppState) => {
+    if (room && roomTab === tabId) {
+      setViewport(prev => prev.scrollX === state.scrollX && prev.scrollY === state.scrollY && prev.zoom === state.zoom.value
+        ? prev : { scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value });
+    }
     if (!room || !hydrated || roomTab !== tabId || followingRef.current) return;
     const now = Date.now();
     if (now - lastView.current < 125) return;
@@ -192,6 +214,31 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
       scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value
     } }));
   }, [room, hydrated, tabId, roomTab]);
+  const sendReaction = useCallback((emoji: string) => {
+    if (!room || !EMOJI.includes(emoji as typeof EMOJI[number]) || ws.current?.readyState !== WebSocket.OPEN) return;
+    const reaction: Reaction = { id: crypto.randomUUID(), emoji, x: .5, y: .6, at: Date.now() };
+    setReactions(prev => [...prev.slice(-18), reaction]);
+    ws.current.send(JSON.stringify({ type: 'reaction', reaction }));
+  }, [room]);
+
+  const sendSticker = useCallback((sticker: Sticker) => {
+    if (!room || ws.current?.readyState !== WebSocket.OPEN) return;
+    setStickers(prev => [...prev.filter(s => s.id !== sticker.id), sticker]);
+    ws.current.send(JSON.stringify({ type: 'sticker', op: 'upsert', sticker }));
+  }, [room]);
+
+  const deleteSticker = useCallback((sticker: Sticker) => {
+    if (!room || ws.current?.readyState !== WebSocket.OPEN) return;
+    setStickers(prev => prev.filter(s => s.id !== sticker.id));
+    ws.current.send(JSON.stringify({ type: 'sticker', op: 'delete', sticker }));
+  }, [room]);
+
+  useEffect(() => {
+    if (!reactions.length) return;
+    const timer = setTimeout(() => setReactions(prev => prev.filter(r => Date.now() - r.at < 2800)), 500);
+    return () => clearTimeout(timer);
+  }, [reactions]);
+
   const follow = useCallback((id: string) => {
     if (!id || id === CLIENT) return;
     followingRef.current = id;
@@ -220,6 +267,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const leave = useCallback(() => { location.hash = 'local'; }, []);
   const setDisplayName = useCallback((value: string) => { const clean = value.trim().slice(0, 32) || 'Guest'; localStorage.setItem('draw-name', clean); setName(clean); }, []);
   const shareUrl = room ? location.origin + '/#room=' + room : '';
-  return { room, roomTab, hydrated, status, members, clientId: CLIENT, following, follow, stopFollowing, sendView, name, error, start, leave, setDisplayName,
+  return { room, roomTab, hydrated, status, members, clientId: CLIENT, following, follow, stopFollowing,
+    viewport, api, stickers, reactions, sendReaction, sendSticker, deleteSticker, sendView, name, error, start, leave, setDisplayName,
     shareUrl, sendPointer, sceneChanged, isApplyingRemote: () => applying.current };
 }
