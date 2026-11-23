@@ -12,10 +12,6 @@ export default function LiveControls({ live }: { live: Live }) {
     </button>
     {open && live.room && <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 10px)', width: 280, padding: 16, background: '#fff', color: '#272030', border: '1px solid #d7cde5', borderRadius: 12, boxShadow: '0 16px 35px #0002' }}>
       <strong>Shared board</strong>
-      <label style={{ display: 'block', fontSize: 12, marginTop: 10, marginBottom: 5 }}>Room name</label>
-      <input aria-label="Room name" key={live.roomName} defaultValue={live.roomName}
-        onBlur={e => live.setRoomName(e.target.value)} onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
-        maxLength={80} style={{ boxSizing: 'border-box', width: '100%', padding: 8, borderRadius: 6, border: '1px solid #c8bfd4' }} />
       <p style={{ fontSize: 12, opacity: .7 }}>Anyone with the room link can collaborate.</p>
       <label style={{ display: 'block', fontSize: 12, marginBottom: 6 }}>Your name</label>
       <input aria-label="Your name" defaultValue={live.name} onBlur={e => live.setDisplayName(e.target.value)}

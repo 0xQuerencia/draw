@@ -11,7 +11,7 @@ npm run check
 npm run build
 ```
 
-Node 22+, npm and Git required. The build creates a `public/` directory. Preview locally with a static file server. Use `#local` for the personal canvas or `#room=<32 hex chars>` for shared boards.
+Node 22+, npm and Git required. The build creates a `public/` directory. Preview locally with a static file server. The homepage opens the personal canvas directly. Use `#room=<32 hex chars>` for shared boards.
 
 ## Architecture
 
@@ -19,11 +19,11 @@ Node 22+, npm and Git required. The build creates a `public/` directory. Preview
 - Room sync: `sync.querencia.art` (Cloudflare Worker + Durable Object). The `board` storage key and `ROOMS` binding remain unchanged.
 - Ephemeral messages: live pointers, viewports, and reactions.
 - Persistent keys: `board`, `stickers`, `comments`, `meta`.
-- Dashboard: recent room history, favorites and image previews are stored **locally in the browser**. Room title metadata lives on the server.
+- The homepage opens the Excalidraw canvas immediately; shared room URLs continue to work.
 
 ## Production deployment
 
-PRs are intentionally not merged or deployed yet. **Before updating the live Worker**, confirm its existing bindings, routes, migrations and MCP compatibility; do not create a new Durable Object namespace. Keep the existing production deployment as a rollback target. Run two-browser drawing, follow, offline/reconnect and reload tests before promoting the frontend.
+The frontend is deployed from the verified Vercel build, and the Cloudflare Worker uses the existing `ROOMS` Durable Object binding. Do not create a new Durable Object namespace or delete room storage. Run two-browser drawing, follow, offline/reconnect and reload tests before major releases.
 
 ## License
 
