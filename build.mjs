@@ -16,8 +16,6 @@ const overrides = {
   'patch/LiveControls.tsx': 'src/components/LiveControls.tsx',
   'patch/CanvasExtras.tsx': 'src/components/CanvasExtras.tsx',
   'patch/CanvasComments.tsx': 'src/components/CanvasComments.tsx',
-  'patch/RoomDashboard.tsx': 'src/components/RoomDashboard.tsx',
-  'patch/recentRooms.ts': 'src/utils/recentRooms.ts',
 };
 for (const [source, target] of Object.entries(overrides)) {
   const destination = path.join('upstream', target);
