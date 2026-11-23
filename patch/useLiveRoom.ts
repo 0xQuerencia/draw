@@ -7,6 +7,9 @@ import { useExcalidrawFilesStore } from '../store/excalidrawFiles';
 export type Viewport = { scrollX: number; scrollY: number; zoom: number };
 export type Sticker = { id: string; emoji: string; x: number; y: number; size: number };
 export type Reaction = { id: string; emoji: string; x: number; y: number; at: number };
+export type Reply = { id: string; body: string; author: string; at: number };
+export type Comment = { id: string; x: number; y: number; kind: 'comment' | 'note'; body: string;
+  author: string; at: number; resolved: boolean; replies: Reply[] };
 export const EMOJI = ['❤️', '✨', '🎉', '👍', '😂', '🥹', '🔥', '💜'] as const;
 export type Member = { id: string; name: string; pointer?: { x: number; y: number } | null; viewport?: Viewport | null };
 export type RoomStatus = 'private' | 'connecting' | 'connected' | 'offline';
@@ -30,6 +33,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const [members, setMembers] = useState<Member[]>([]);
   const [following, setFollowing] = useState<string | null>(null);
   const [stickers, setStickers] = useState<Sticker[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [viewport, setViewport] = useState<Viewport>({ scrollX: 0, scrollY: 0, zoom: 1 });
   const followingRef = useRef<string | null>(null);
@@ -54,7 +58,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   }, []);
 
   useEffect(() => {
-    if (!room) { setRoomTab(null); setHydrated(false); setStatus('private'); setStickers([]); setReactions([]); followingRef.current = null; setFollowing(null); return; }
+    if (!room) { setRoomTab(null); setHydrated(false); setStatus('private'); setStickers([]); setReactions([]); setComments([]); followingRef.current = null; setFollowing(null); return; }
     followingRef.current = null; setFollowing(null);
     const key = 'draw-room-tab:' + room;
     const saved = localStorage.getItem(key);
@@ -123,6 +127,7 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
           const joined = apply(elements, files);
           setMembers(Array.isArray(message.members) ? message.members : []);
           setStickers(Array.isArray(message.stickers) ? message.stickers : []);
+          setComments(Array.isArray(message.comments) ? message.comments : []);
           setStatus('connected');
           setHydrated(true);
           // Restore offline edits that are newer than the server snapshot.
@@ -163,6 +168,8 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
           const r = message.reaction as Reaction | undefined;
           if (!r || !EMOJI.includes(r.emoji as typeof EMOJI[number])) return;
           setReactions(prev => [...prev.slice(-18), { ...r, at: Date.now() }]);
+        } else if (message.type === 'comments') {
+          if (Array.isArray(message.comments)) setComments(message.comments as Comment[]);
         } else if (message.type === 'sticker') {
           const item = message.sticker as Sticker | undefined;
           if (!item || typeof item.id !== 'string') return;
@@ -214,6 +221,29 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
       scrollX: state.scrollX, scrollY: state.scrollY, zoom: state.zoom.value
     } }));
   }, [room, hydrated, tabId, roomTab]);
+  const createComment = useCallback((data: { x: number; y: number; kind: 'comment' | 'note'; body: string }) => {
+    if (!room || ws.current?.readyState !== WebSocket.OPEN) return;
+    const body = data.body.trim().slice(0, 500);
+    if (!body) return;
+    const comment: Comment = { id: crypto.randomUUID(), ...data, body, author: name,
+      at: Date.now(), resolved: false, replies: [] };
+    setComments(prev => [...prev, comment]);
+    ws.current.send(JSON.stringify({ type: 'comment_event', op: 'add', comment }));
+  }, [room, name]);
+
+  const replyComment = useCallback((id: string, body: string) => {
+    if (!room || ws.current?.readyState !== WebSocket.OPEN || !body.trim()) return;
+    const reply: Reply = { id: crypto.randomUUID(), body: body.trim().slice(0, 500), author: name, at: Date.now() };
+    setComments(prev => prev.map(c => c.id === id ? { ...c, replies: [...c.replies, reply] } : c));
+    ws.current.send(JSON.stringify({ type: 'comment_event', op: 'reply', id, reply }));
+  }, [room, name]);
+
+  const resolveComment = useCallback((id: string, resolved: boolean) => {
+    if (!room || ws.current?.readyState !== WebSocket.OPEN) return;
+    setComments(prev => prev.map(c => c.id === id ? { ...c, resolved } : c));
+    ws.current.send(JSON.stringify({ type: 'comment_event', op: 'resolve', id, resolved }));
+  }, [room]);
+
   const sendReaction = useCallback((emoji: string) => {
     if (!room || !EMOJI.includes(emoji as typeof EMOJI[number]) || ws.current?.readyState !== WebSocket.OPEN) return;
     const reaction: Reaction = { id: crypto.randomUUID(), emoji, x: .5, y: .6, at: Date.now() };
@@ -268,6 +298,6 @@ export function useLiveRoom(api: ExcalidrawImperativeAPI | null, tabId: number) 
   const setDisplayName = useCallback((value: string) => { const clean = value.trim().slice(0, 32) || 'Guest'; localStorage.setItem('draw-name', clean); setName(clean); }, []);
   const shareUrl = room ? location.origin + '/#room=' + room : '';
   return { room, roomTab, hydrated, status, members, clientId: CLIENT, following, follow, stopFollowing,
-    viewport, api, stickers, reactions, sendReaction, sendSticker, deleteSticker, sendView, name, error, start, leave, setDisplayName,
+    viewport, api, stickers, reactions, comments, createComment, replyComment, resolveComment, sendReaction, sendSticker, deleteSticker, sendView, name, error, start, leave, setDisplayName,
     shareUrl, sendPointer, sceneChanged, isApplyingRemote: () => applying.current };
 }
