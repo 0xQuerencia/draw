@@ -21,3 +21,7 @@ The production Vercel domain still points at the previously deployed version. Do
 ## License
 
 The upstream Excalidraw multi-tab wrapper uses MIT; Excalidraw and its dependencies retain their original licenses.
+
+## Room dashboard
+
+The website root shows recently visited rooms on **this browser**, including local thumbnail previews and pinned favorites. Shared board links open directly. Use `#local` for a personal Excalidraw canvas. Room titles and collaboration state are synchronized by the Worker; saved local previews are not uploaded.
